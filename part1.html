@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.15.1/dist/phaser-arcade-physics.min.js"></script>
+</head>
+<body>
+
+    <script>
+    // Phaser 게임 설정
+    var config = {
+        type: Phaser.AUTO, // 자동으로 Phaser.WEBGL 을 쓰게 만듦. Device 가 지원하지 않을 경우 Phaser.CANVAS 사용
+
+        // game canvas 사이즈
+        width: 800,
+        height: 600,
+
+        // 물리 사용
+        physics: {
+            default: 'arcade', // arcade 모드
+            arcade: {
+                gravity: {y: 300},
+                debug: false
+            }
+        },
+
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var game = new Phaser.Game(config)
+
+    // preload 함수 안에서 asset 을 load 하고 scene의 preload 에 등록한다.
+    // phaser 는 시작하면 자동으로 preload 에 담긴 함수를 실행시킨다.
+    function preload()
+    { 
+        console.log(this)
+        this.load.image('sky', 'assets/sky.png') // key, path
+        this.load.image('ground', 'assets/platform.png')
+        this.load.image('star', 'assets/star.png')
+        this.load.image('bomb', 'assets/bomb.png')
+        this.load.spritesheet('dude', 'assets/dude.png', {frameWidth: 32, frameHeight: 48})
+    }
+
+    var platforms;
+    var player;
+    var cursors;
+    var stars;
+    var score = 0;
+    var scoreText;
+    var bombs;
+    var gameOver;
+
+    function create() 
+    {
+        console.log(this)
+        this.add.image(400, 300, 'sky') // canvas 상 위치
+        // this.add.image(400, 300, 'sky').setOrigin(0, 0) // setOrigin 으로 좌표기준을 바꿀 수 있다.
+        // this.add.image(400, 300, 'star')
+        
+        platforms = this.physics.add.staticGroup(); // Static Physics Group 을 만들어 platforms 에 부여 (vs Dynamic)
+        // group 이란 비슷한 객체들을 쉽게 컨트롤하기 위해 묶어놓은 것.
+        // group 은 create() 으로 객체를 만들 수 있음.
+
+        platforms.create(400, 568, 'ground').setScale(2).refreshBody();
+        // setScale() -> 2배로 키움
+        // refreshBody() -> 2배 키운걸 물리적으로 적용하는 부분 (자동적용은 안되는듯?)
+        
+        platforms.create(600, 400, 'ground');
+        platforms.create(50, 250, 'ground');
+        platforms.create(750, 220, 'ground');
+
+        player = this.physics.add.sprite(100, 450, 'dude'); // x:100, y:450 위치에 player 생성
+        player.setBounce(0.2); // 점프했다 땅에 닿으면 튕기는 정도(0~1)
+        player.setCollideWorldBounds(true); // 테두리와 충돌하게 설정
+
+        // anims 는 global object 로 key 를 통해 애니메이션 객체를 공유할 수 있다.
+        this.anims.create({
+            key: 'left',
+            frames: this.anims.generateFrameNumbers('dude', {start: 0, end: 3}), // 0 ~ 3 총 4개 프레임 사용
+            frameRate: 10,
+            repeat: -1 // loop
+        })
+
+        this.anims.create({
+            key: 'turn',
+            frames: [{key: 'dude', frame: 4}], // 4번 단일 프레임 사용
+            frameRate: 20
+        })
+    
+        this.anims.create({
+            key: 'right',
+            frames: this.anims.generateFrameNumbers('dude', {start: 5, end: 8}),
+            frameRate: 10,
+            repeat: -1 // loop
+        })
+
+        // physics sprite 은 body 가 있고 physics body 를 참조한다.
+        player.body.setGravityY(100);
+        this.physics.add.collider(player, platforms); // collider 를 생성하여 물체(물체그룹)간의 충돌을 검사한다.
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        // dynamic physics group 생성 (static 일경우 staticGroup)
+        // group 은 configuration 용 객체를 parameter 로 받을 수 있따.
+        stars = this.physics.add.group({ 
+            key: 'star', // texture key 부여
+            repeat: 11, // 총 12개의 객체 (1개는 자동으로 생성)
+            setXY: { x: 12, y: 0, stepX: 70} // 첫 객체는 (12, 0) 에 위치하고 x 가 70 씩 늘어남.
+        });
+
+        stars.children.iterate(function(child) 
+        {
+            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8)) // 0 ~ 1
+        })
+
+        this.physics.add.collider(stars, platforms);
+        this.physics.add.overlap(stars, player, collectStar, null, this);
+
+        var score = 0;
+        var scoreText = this.add.text(16, 16)
+
+        function collectStar(player, star)
+        {
+            star.disableBody(true, true);
+            score += 10;
+            scoreText.setText('Score: ' + score);
+
+            if (stars.countActive(true) === 0)
+            {
+                stars.children.iterate(function(child) 
+                {
+                    child.enableBody(true, child.x, 0, true, true);
+                })
+
+                var x = (player.x < 400) ? Phaser.Math.Between(400, 800) : Phaser.Math.Between(0, 400);
+
+                for (let i = 0; i < 2; i++)
+                {
+                    var bomb = bombs.create(x, 16, 'bomb');
+                    bomb.setBounce(1);
+                    bomb.setCollideWorldBounds(true);
+                    bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+                }
+                
+            }
+        }
+        
+        scoreText = this.add.text(16, 16, 'score: 0', {fontSize: '32px', fill: '#000'})
+
+        bombs = this.physics.add.group();
+        this.physics.add.collider(bombs, platforms);
+        this.physics.add.collider(player, bombs, hitBomb, null, this);
+
+        function hitBomb(player, bomb) 
+        {
+            this.physics.pause();
+            player.setTint(0xff0000); // 빨간색으로 변경
+            player.anims.play('turn');
+            gameOver = true;
+        }
+
+    }
+
+    function update() 
+    {   
+        if (cursors.left.isDown) // left key 가 being pressed 일 경우
+        {
+            player.setVelocityX(-160);
+            player.anims.play('left', true);
+        }
+        else if (cursors.right.isDown) 
+        {
+            player.setVelocityX(160);
+            player.anims.play('right', true);
+        }
+        else 
+        {
+            player.setVelocityX(0);
+            player.anims.play('turn');
+        }
+
+        // jump
+        if (cursors.up.isDown && player.body.touching.down)
+        {
+            player.setVelocityY(-430); // px/sec
+        }
+    }
+    </script>
+
+</body>
+</html>
